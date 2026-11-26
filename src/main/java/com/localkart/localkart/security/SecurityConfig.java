@@ -34,60 +34,41 @@ public class SecurityConfig {
         http
             .cors(cors -> cors.configurationSource(corsConfigurationSource()))
             .csrf(csrf -> csrf.disable())
-
             .sessionManagement(session -> session
                 .sessionCreationPolicy(SessionCreationPolicy.STATELESS))
-
             .authorizeHttpRequests(auth -> auth
-
-                // Allow browser preflight requests
                 .requestMatchers(HttpMethod.OPTIONS, "/**").permitAll()
-
-                // Public authentication
                 .requestMatchers(
                     "/api/users/register",
                     "/api/users/login"
                 ).permitAll()
-
-                // Public product browsing
                 .requestMatchers(
                     HttpMethod.GET,
                     "/api/products/**"
                 ).permitAll()
-
-                // Public seller search
                 .requestMatchers(
                     HttpMethod.GET,
                     "/api/sellers/search",
                     "/api/sellers/search/**"
                 ).permitAll()
-
-                // Seller-only product management
                 .requestMatchers(
                     HttpMethod.POST,
                     "/api/products"
                 ).hasRole("SELLER")
-
                 .requestMatchers(
                     HttpMethod.PUT,
                     "/api/products/**"
                 ).hasRole("SELLER")
-
                 .requestMatchers(
                     HttpMethod.DELETE,
                     "/api/products/**"
                 ).hasRole("SELLER")
-
-                // Seller-only order status updates
                 .requestMatchers(
                     HttpMethod.PUT,
                     "/api/orders/*/status"
                 ).hasRole("SELLER")
-
-                // All other endpoints require authentication
                 .anyRequest().authenticated()
             )
-
             .addFilterBefore(
                 jwtAuthenticationFilter,
                 UsernamePasswordAuthenticationFilter.class
@@ -104,7 +85,6 @@ public class SecurityConfig {
     @Bean
     public AuthenticationManager authenticationManager(
             AuthenticationConfiguration configuration) throws Exception {
-
         return configuration.getAuthenticationManager();
     }
 
@@ -113,34 +93,28 @@ public class SecurityConfig {
 
         CorsConfiguration configuration = new CorsConfiguration();
 
-        configuration.setAllowedOrigins(
-            List.of(
-                "http://localhost:5174",
-                "http://localhost:5173"
-            )
-        );
+        configuration.setAllowedOriginPatterns(List.of(
+            "http://localhost:5174",
+            "http://localhost:5173",
+            "http://localhost:5176",
+            "http://localhost:8083",
+            "https://*.vercel.app",
+            "https://localkart-y9o3.netlify.app",
+            "https://*.netlify.app"
+        ));
 
-        configuration.setAllowedMethods(
-            List.of(
-                "GET",
-                "POST",
-                "PUT",
-                "DELETE",
-                "OPTIONS"
-            )
-        );
+        configuration.setAllowedMethods(List.of(
+            "GET", "POST", "PUT", "DELETE", "OPTIONS"
+        ));
 
-        configuration.setAllowedHeaders(
-            List.of(
-                "Authorization",
-                "Content-Type"
-            )
-        );
+        configuration.setAllowedHeaders(List.of(
+            "Authorization", "Content-Type"
+        ));
 
         configuration.setAllowCredentials(true);
 
         UrlBasedCorsConfigurationSource source =
-                new UrlBasedCorsConfigurationSource();
+            new UrlBasedCorsConfigurationSource();
 
         source.registerCorsConfiguration("/**", configuration);
 
