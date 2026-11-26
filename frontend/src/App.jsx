@@ -2,7 +2,7 @@
 import { useEffect, useState } from "react";
 import "./App.css";
 
-const API_URL = "http://localhost:8081";
+const API_URL = import.meta.env.VITE_API_URL || "http://localhost:8083";
 
 const apiFetch = (url, options = {}) => {
   const token = localStorage.getItem("token");
@@ -73,7 +73,7 @@ function App() {
   const [reviewMessage, setReviewMessage] = useState("");
 
   const userId = auth?.id;
-  const sellerId = 1;
+const sellerId = sellerDashboard?.seller?.id;
 
   // LOGIN
   const handleLogin = async (e) => {
@@ -233,212 +233,206 @@ function App() {
   };
 
   // LOAD REVIEWS
-  const loadReviews = async () => {
-    try {
-      const response = await apiFetch(`/api/reviews/seller/${sellerId}`);
+ 
+const loadReviews = async (targetSellerId) => {
+  if (!targetSellerId) {
+    setReviews([]);
+    return;
+  }
 
-      if (!response.ok) {
-        throw new Error("Reviews loading failed");
-      }
+  try {
+    const response = await apiFetch(
+      `/api/reviews/seller/${targetSellerId}`
+    );
 
-      const data = await response.json();
-      setReviews(Array.isArray(data) ? data : []);
-    } catch (error) {
-      console.error(error);
+    if (!response.ok) {
+      throw new Error("Reviews loading failed");
     }
-  };
+
+    const data = await response.json();
+    setReviews(Array.isArray(data) ? data : []);
+  } catch (error) {
+    console.error(error);
+  }
+};
 
   // SUBMIT CUSTOMER REVIEW
-  const submitReview = async (order) => {
-    const rating = Number(reviewRatings[order.id] || 0);
-    const comment = (reviewComments[order.id] || "").trim();
+ 
+const submitReview = async (order) => {
+  const rating = Number(reviewRatings[order.id] || 0);
+  const comment = (reviewComments[order.id] || "").trim();
 
-    if (rating < 1 || rating > 5) {
-      setReviewMessage("Please select a rating between 1 and 5 stars.");
-      return;
+  if (rating < 1 || rating > 5) {
+    setReviewMessage("Please select a rating between 1 and 5 stars.");
+    return;
+  }
+
+  if (!comment) {
+    setReviewMessage("Please enter a review comment.");
+    return;
+  }
+
+  const orderedProduct = products.find(
+    (product) => Number(product.id) === Number(order.productId)
+  );
+
+  const reviewSellerId = orderedProduct?.sellerId;
+
+  if (!reviewSellerId) {
+    setReviewMessage("Unable to identify the seller for this order.");
+    return;
+  }
+
+  try {
+    setReviewSubmitting((previous) => ({
+      ...previous,
+      [order.id]: true,
+    }));
+
+    setReviewMessage("");
+
+    const response = await apiFetch("/api/reviews", {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({
+        userId,
+        sellerId: reviewSellerId,
+        rating,
+        comment,
+      }),
+    });
+
+    if (!response.ok) {
+      const errorText = await response.text();
+      throw new Error(errorText || "Review submission failed");
     }
 
-    if (!comment) {
-      setReviewMessage("Please enter a review comment.");
-      return;
-    }
+    setReviewMessage(
+      `Thank you! Your review for Order #${order.id} was submitted.`
+    );
 
-    try {
-      setReviewSubmitting((previous) => ({
-        ...previous,
-        [order.id]: true,
-      }));
+    setReviewRatings((previous) => ({
+      ...previous,
+      [order.id]: 0,
+    }));
 
-      setReviewMessage("");
+    setReviewComments((previous) => ({
+      ...previous,
+      [order.id]: "",
+    }));
 
-      const response = await apiFetch("/api/reviews", {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-        },
-        body: JSON.stringify({
-          userId,
-          sellerId,
-          rating,
-          comment,
-        }),
-      });
+    await loadReviews(reviewSellerId);
 
-      if (!response.ok) {
-        const errorText = await response.text();
-        throw new Error(errorText || "Review submission failed");
-      }
+  } catch (error) {
+    console.error(error);
+    setReviewMessage(error.message || "Unable to submit review.");
+  } finally {
+    setReviewSubmitting((previous) => ({
+      ...previous,
+      [order.id]: false,
+    }));
+  }
+};
 
-      setReviewMessage(
-        `Thank you! Your review for Order #${order.id} was submitted.`
-      );
-
-      setReviewRatings((previous) => ({
-        ...previous,
-        [order.id]: 0,
-      }));
-
-      setReviewComments((previous) => ({
-        ...previous,
-        [order.id]: "",
-      }));
-
-      await loadReviews();
-      await loadSellerDashboard();
-    } catch (error) {
-      console.error(error);
-      setReviewMessage(error.message || "Unable to submit review.");
-    } finally {
-      setReviewSubmitting((previous) => ({
-        ...previous,
-        [order.id]: false,
-      }));
-    }
-  };
 
   // LOAD SELLER DASHBOARD
-  const loadSellerDashboard = async () => {
-    try {
-      setDashboardLoading(true);
-      setMessage("");
+  
+// LOAD SELLER DASHBOARD
+const loadSellerDashboard = async () => {
+  try {
+    setDashboardLoading(true);
+    setMessage("");
 
-      const [dashboardResponse, ordersResponse] = await Promise.all([
-        apiFetch(`/api/sellers/${sellerId}/dashboard`),
-        apiFetch(`/api/orders/seller/${sellerId}`),
-      ]);
+    // First, load the logged-in seller's dashboard
+    const dashboardResponse = await apiFetch(
+      "/api/sellers/dashboard"
+    );
 
-      if (!dashboardResponse.ok) {
-        throw new Error("Seller dashboard loading failed");
-      }
-
-      if (!ordersResponse.ok) {
-        throw new Error("Seller orders loading failed");
-      }
-
-      setSellerDashboard(await dashboardResponse.json());
-      setSellerOrders(await ordersResponse.json());
-    } catch (error) {
-      console.error(error);
-      setMessage("Unable to load seller dashboard.");
-    } finally {
-      setDashboardLoading(false);
+    if (!dashboardResponse.ok) {
+      throw new Error("Seller dashboard loading failed");
     }
+
+    const dashboardData = await dashboardResponse.json();
+
+    // Get the actual store ID
+    const actualSellerId = dashboardData.seller.id;
+
+    // Now load orders using the actual store ID
+    const ordersResponse = await apiFetch(
+      `/api/orders/seller/${actualSellerId}`
+    );
+
+    if (!ordersResponse.ok) {
+      throw new Error("Seller orders loading failed");
+    }
+
+    setSellerDashboard(dashboardData);
+setSellerOrders(await ordersResponse.json());
+
+await loadReviews(actualSellerId);
+
+  } catch (error) {
+    console.error(error);
+    setMessage("Unable to load seller dashboard.");
+  } finally {
+    setDashboardLoading(false);
+  }
+};
+
+  
+// ADD PRODUCT
+const addProduct = async (e) => {
+  e.preventDefault();
+
+  const formData = new FormData(e.target);
+
+  const newProduct = {
+    name: formData.get("name"),
+    description: formData.get("description"),
+    price: Number(formData.get("price")),
+    stock: Number(formData.get("stock")),
+    category: formData.get("category"),
+    imageUrl: formData.get("imageUrl"),
+    sellerId: sellerDashboard?.seller?.id,
   };
 
-  // ADD PRODUCT
-  const addProduct = async (e) => {
-    e.preventDefault();
+  if (!newProduct.sellerId) {
+    setMessage("Seller information is not loaded. Please refresh.");
+    return;
+  }
 
-    const formData = new FormData(e.target);
+  try {
+    setAddingProduct(true);
+    setMessage("");
 
-    const newProduct = {
-      name: formData.get("name"),
-      description: formData.get("description"),
-      price: Number(formData.get("price")),
-      stock: Number(formData.get("stock")),
-      category: formData.get("category"),
-      imageUrl: formData.get("imageUrl"),
-      sellerId,
-    };
+    const response = await apiFetch("/api/products", {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify(newProduct),
+    });
 
-    try {
-      setAddingProduct(true);
-      setMessage("");
-
-      const response = await apiFetch("/api/products", {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-        },
-        body: JSON.stringify(newProduct),
-      });
-
-      if (!response.ok) {
-        throw new Error(await response.text());
-      }
-
-      e.target.reset();
-
-      await loadProducts();
-      await loadSellerDashboard();
-
-      setMessage("Product added successfully!");
-    } catch (error) {
-      console.error(error);
-      setMessage("Unable to add product. Please check the details.");
-    } finally {
-      setAddingProduct(false);
+    if (!response.ok) {
+      throw new Error(await response.text());
     }
-  };
 
-  // UPDATE PRODUCT
-  const updateProduct = async (e) => {
-    e.preventDefault();
+    e.target.reset();
 
-    if (!editingProduct) return;
+    await loadProducts();
+    await loadSellerDashboard();
 
-    const updatedProduct = {
-      name: editForm.name,
-      description: editForm.description,
-      price: Number(editForm.price),
-      stock: Number(editForm.stock),
-      category: editForm.category,
-      imageUrl: editForm.imageUrl,
-      sellerId,
-    };
+    setMessage("Product added successfully!");
+  } catch (error) {
+    console.error(error);
+    setMessage("Unable to add product. Please check the details.");
+  } finally {
+    setAddingProduct(false);
+  }
+};
 
-    try {
-      setUpdatingProduct(true);
-      setMessage("");
-
-      const response = await apiFetch(
-        `/api/products/${editingProduct.id}`,
-        {
-          method: "PUT",
-          headers: {
-            "Content-Type": "application/json",
-          },
-          body: JSON.stringify(updatedProduct),
-        }
-      );
-
-      if (!response.ok) {
-        throw new Error(await response.text());
-      }
-
-      setEditingProduct(null);
-
-      await loadProducts();
-      await loadSellerDashboard();
-
-      setMessage("Product updated successfully!");
-    } catch (error) {
-      console.error(error);
-      setMessage("Unable to update product.");
-    } finally {
-      setUpdatingProduct(false);
-    }
-  };
 
   // CANCEL EDIT
   const cancelEdit = () => {
@@ -529,24 +523,21 @@ function App() {
     setLoading(true);
 
     Promise.all([
-      loadProducts(),
-      loadCart(),
-      loadOrders(),
-      loadReviews(),
-    ]).finally(() => {
+  loadProducts(),
+  loadCart(),
+  loadOrders(),
+]).finally(() => {
       setLoading(false);
     });
   }, [auth?.id]);
 
   // OPEN SELLER DASHBOARD
-  const openSellerDashboard = async () => {
-    setView("seller");
+  
+const openSellerDashboard = async () => {
+  setView("seller");
+  await loadSellerDashboard();
+};
 
-    await Promise.all([
-      loadSellerDashboard(),
-      loadReviews(),
-    ]);
-  };
 
   // ADD TO CART
   const addToCart = async (productId) => {
@@ -670,8 +661,10 @@ function App() {
   }, 0);
 
   const sellerProducts = products.filter(
-    (product) => Number(product.sellerId) === sellerId
-  );
+  (product) =>
+    Number(product.sellerId) ===
+    Number(sellerDashboard?.seller?.id)
+);
 
   const averageRating = reviews.length
     ? reviews.reduce(
