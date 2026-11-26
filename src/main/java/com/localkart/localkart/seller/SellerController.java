@@ -1,16 +1,26 @@
 
 package com.localkart.localkart.seller;
 
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
-import java.util.LinkedHashMap;
 
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
-import org.springframework.web.bind.annotation.*;
+import org.springframework.security.core.Authentication;
+import org.springframework.web.bind.annotation.CrossOrigin;
+import org.springframework.web.bind.annotation.GetMapping;
+import org.springframework.web.bind.annotation.PathVariable;
+import org.springframework.web.bind.annotation.PostMapping;
+import org.springframework.web.bind.annotation.RequestBody;
+import org.springframework.web.bind.annotation.RequestMapping;
+import org.springframework.web.bind.annotation.RequestParam;
+import org.springframework.web.bind.annotation.RestController;
 
 import com.localkart.localkart.product.ProductRepository;
 import com.localkart.localkart.review.ReviewRepository;
+import com.localkart.localkart.user.User;
+import com.localkart.localkart.user.UserRepository;
 
 @CrossOrigin(origins = "http://localhost:5174")
 @RestController
@@ -20,15 +30,18 @@ public class SellerController {
     private final SellerService sellerService;
     private final ProductRepository productRepository;
     private final ReviewRepository reviewRepository;
+    private final UserRepository userRepository;
 
     public SellerController(
             SellerService sellerService,
             ProductRepository productRepository,
-            ReviewRepository reviewRepository) {
+            ReviewRepository reviewRepository,
+            UserRepository userRepository) {
 
         this.sellerService = sellerService;
         this.productRepository = productRepository;
         this.reviewRepository = reviewRepository;
+        this.userRepository = userRepository;
     }
 
     // Register a new seller
@@ -74,21 +87,29 @@ public class SellerController {
                 sellerService.getSellersByPostalCode(postalCode));
     }
 
-    // Seller dashboard
-    @GetMapping("/{id}/dashboard")
+    // Seller dashboard - logged-in seller only
+    @GetMapping("/dashboard")
     public ResponseEntity<Map<String, Object>> getSellerDashboard(
-            @PathVariable Long id) {
+            Authentication authentication) {
 
-        seller sellerDetails = sellerService.getSellerById(id);
+        User loggedInUser = userRepository.findByEmail(
+                authentication.getName()
+        ).orElseThrow(() ->
+                new IllegalArgumentException("User not found"));
+
+        seller sellerDetails =
+                sellerService.getSellerByUserId(loggedInUser.getId());
+
+        Long sellerId = sellerDetails.getId();
 
         int totalProducts =
-                productRepository.findBySellerId(id).size();
+                productRepository.findBySellerId(sellerId).size();
 
         long totalReviews =
-                reviewRepository.countBySellerId(id);
+                reviewRepository.countBySellerId(sellerId);
 
         Double averageRating =
-                reviewRepository.getAverageRating(id);
+                reviewRepository.getAverageRating(sellerId);
 
         Map<String, Object> dashboard = new LinkedHashMap<>();
 
